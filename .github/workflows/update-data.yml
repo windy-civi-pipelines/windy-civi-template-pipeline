@@ -6,7 +6,7 @@ on:
   #   - cron: "0 1 * * *" # every day at 1am UTC
 
 env:
-  STATE: al # <-- update this value per state repo, e.g. il, tx, ny, etc.
+  STATE: il # <-- update this value per state repo, e.g. il, tx, ny, etc.
 
 jobs:
   update-data:
@@ -71,6 +71,9 @@ jobs:
         run: |
           git config user.email "no_email"
           git config user.name "Windy Civi Bot"
+          git fetch origin main
+          git pull origin main --rebase || true
+
           git add data_output bill_session_mapping sessions
-          git commit -m "Automated report update (report dated ${{ steps.get-date.outputs.date }})" || echo "No changes to commit"
-          git push
+          git diff --cached --quiet && echo "No changes to commit" || git commit -m "Automated report update (report dated ${{ steps.get-date.outputs.date }})"
+          git push || echo "⚠️ Git push failed — possibly due to upstream changes."
