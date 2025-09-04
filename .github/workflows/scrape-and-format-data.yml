@@ -1,0 +1,28 @@
+name: Scrape and Format Data
+
+on:
+  schedule:
+    - cron: "0 1 * * *" # every day at 1am UTC
+  workflow_dispatch:
+    inputs:
+      use-scrape-cache:
+        type: boolean
+        description: Use open states scraper cache
+      force-update:
+        type: boolean
+        description: "Force push changes even if there are upstream changes (use with caution)"
+
+jobs:
+  update-data:
+    name: Scrape and Format Data
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: windy-civi/opencivicdata-blockchain-transformer@main
+        with:
+          state: wy #UPDATE STATE HERE
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          use-scrape-cache: ${{ inputs.use-scrape-cache }}
+          force-update: ${{ inputs.force-update }}
