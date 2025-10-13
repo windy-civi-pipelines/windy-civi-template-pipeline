@@ -15,7 +15,8 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Run text extraction action
-        uses: windy-civi/opencivicdata-blockchain-transformer/action-extract@bill-text-extraction
+        uses: windy-civi/opencivicdata-blockchain-transformer/actions/extract@main
         with:
-          # state: wy UPDATE STATE HERE
+          action-type: extract
+          state: wy #UPDATE STATE
           github-token: ${{ secrets.GITHUB_TOKEN }}
