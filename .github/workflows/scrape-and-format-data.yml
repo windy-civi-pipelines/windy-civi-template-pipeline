@@ -20,7 +20,7 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout Tennessee repo
+      - name: Checkout state repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
