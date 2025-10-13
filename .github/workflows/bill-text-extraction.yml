@@ -1,22 +1,21 @@
 name: Text Extraction from Bills
 
 on:
-  # schedule:
-  #   - cron: "0 1 * * *" # every day at 1am UTC
   workflow_dispatch
 
 jobs:
-  update-data:
+  extract-text:
     name: Text Extraction
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - name: Checkout Tennessee repo
+      - name: Checkout state repo
         uses: actions/checkout@v4
-    
-      - uses: windy-civi/opencivicdata-blockchain-transformer@bill-text-extraction
+      
+      - name: Run text extraction action
+        uses: windy-civi/opencivicdata-blockchain-transformer/action-extract@bill-text-extraction
         with:
-          # state: wy #update state here
+          # state: wy UPDATE STATE HERE
           github-token: ${{ secrets.GITHUB_TOKEN }}
