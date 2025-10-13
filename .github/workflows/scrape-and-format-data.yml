@@ -26,9 +26,10 @@ jobs:
           fetch-depth: 0
       
       - name: Run scraper action
-        uses: windy-civi/opencivicdata-blockchain-transformer/action-scrape@bill-text-extraction
+        uses: windy-civi/opencivicdata-blockchain-transformer/actions/scrape@main
         with:
-          # state: wy UPDATE STATE HERE
+          action-type: scrape
+          state: wy #UPDATE STATE
           github-token: ${{ secrets.GITHUB_TOKEN }}
           use-scrape-cache: ${{ inputs.use-scrape-cache }}
           force-update: ${{ inputs.force-update }}
