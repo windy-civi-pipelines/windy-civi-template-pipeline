@@ -1,4 +1,4 @@
-# 🏛️ Windy Civi Data Pipeline Template (With Text Extraction)
+# 🏛️ Windy Civi Data Pipeline Template
 
 A **GitHub Actions-powered pipeline** that scrapes, cleans, versions, and extracts text from state legislative data from **Open States**. This repository acts as a standardized template for all state-level pipelines within the Windy Civi ecosystem.
 
@@ -10,11 +10,26 @@ Each state pipeline provides a self-contained automation workflow to:
 
 1. 🧹 **Scrape** data for a single U.S. state from the [OpenStates](https://github.com/openstates/openstates-scrapers) project
 2. 🧼 **Sanitize** the data by removing ephemeral fields (`_id`, `scraped_at`) for deterministic output
-3. 🧠 **Format** it into a blockchain-style, versioned structure
-4. 📄 **Extract** full text from bills, amendments, and supporting documents (PDFs, XMLs, HTMLs)
-5. 📂 **Commit** the formatted output and extracted text nightly (or manually)
+3. 🧠 **Format** it into a blockchain-style, versioned structure with incremental processing
+4. 🔗 **Link** events to bills and sessions automatically
+5. 🩺 **Monitor** data quality by tracking orphaned bills
+6. 📄 **Extract** full text from bills, amendments, and supporting documents (PDFs, XMLs, HTMLs)
+7. 📂 **Commit** the formatted output and extracted text nightly (or manually) with auto-save
 
 This approach keeps every state repository consistent, auditable, and easy to maintain.
+
+---
+
+## ✨ Key Features
+
+- **🔄 Incremental Processing** - Only processes new or updated bills (no duplicate work!)
+- **💾 Auto-Save Failsafe** - Commits progress every 30 minutes during text extraction
+- **🩺 Data Quality Monitoring** - Tracks orphaned bills (votes/events without bill data)
+- **🔗 Bill-Event Linking** - Automatically connects committee hearings and events to bills
+- **⏱️ Timestamp Tracking** - Two-level timestamps for logs and text extraction
+- **🎯 Multi-Format Text Extraction** - XML → HTML → PDF with fallbacks
+- **🔀 Concurrent Job Support** - Multiple runs can safely update the same repository
+- **📊 Detailed Error Logging** - Categorized errors for easy debugging
 
 ---
 
@@ -29,10 +44,21 @@ This approach keeps every state repository consistent, auditable, and easy to ma
    **In `.github/workflows/scrape-and-format-data.yml`:**
 
    ```yaml
-   - name: Scrape and format
-     uses: windy-civi/opencivicdata-blockchain-transformer/actions/scrape@main
-     with:
-       state: il # CHANGE THIS to your state abbreviation
+   env:
+     STATE_CODE: il # CHANGE THIS to your state abbreviation
+
+   jobs:
+     scrape:
+       - name: Scrape data
+         uses: windy-civi/opencivicdata-blockchain-transformer/actions/scrape@main
+         with:
+           state: ${{ env.STATE_CODE }}
+
+     format:
+       - name: Format data
+         uses: windy-civi/opencivicdata-blockchain-transformer/actions/format@main
+         with:
+           state: ${{ env.STATE_CODE }}
    ```
 
    **In `.github/workflows/extract-text.yml`:**
@@ -56,7 +82,7 @@ This approach keeps every state repository consistent, auditable, and easy to ma
      schedule:
        - cron: "0 1 * * *" # For scrape-and-format-data.yml
        # or
-       - cron: "0 2 * * *" # For extract-text.yml
+       - cron: "0 3 * * *" # For extract-text.yml (runs later to avoid overlap)
    ```
 
 ---
@@ -65,14 +91,23 @@ This approach keeps every state repository consistent, auditable, and easy to ma
 
 The pipeline runs in two stages:
 
-1. **Scrape & Format** (1am UTC) - Collects and structures bill metadata
-2. **Text Extraction** (2am UTC) - Downloads and extracts full bill text
+### **Stage 1: Scrape & Format** (1am UTC)
+
+Two separate jobs that run sequentially:
+
+1. **Scrape Job** - Downloads legislative data using OpenStates scrapers
+2. **Format Job** - Processes scraped data, links events, and monitors quality
+
+### **Stage 2: Text Extraction** (3am UTC)
+
+Independent workflow that extracts full bill text from documents.
 
 This separation allows:
 
 - ✅ Faster metadata updates
-- ✅ Separate monitoring of scraping vs extraction
-- ✅ Text extraction can be disabled if not needed
+- ✅ Independent monitoring and debugging
+- ✅ Text extraction can timeout and restart without affecting scraping
+- ✅ Better resource management (text extraction can take hours)
 
 ---
 
@@ -81,29 +116,36 @@ This separation allows:
 ```
 STATE-data-pipeline/
 ├── .github/workflows/
-│   ├── scrape-and-format-data.yml  # Metadata scraping
-│   └── extract-text.yml             # Text extraction (optional)
+│   ├── scrape-and-format-data.yml  # Metadata scraping + formatting
+│   └── extract-text.yml             # Text extraction (independent)
 ├── data_output/
 │   ├── data_processed/              # Clean structured output
-│   │   └── country:us/state:xx/
-│   │       └── sessions/
-│   │           └── {session_id}/
-│   │               └── bills/
-│   │                   └── {bill_id}/
-│   │                       ├── metadata.json      # Bill metadata
-│   │                       ├── files/             # Extracted text & documents
-│   │                       │   ├── *.pdf          # Original PDFs
-│   │                       │   ├── *.xml          # Original XMLs
-│   │                       │   └── *_extracted.txt # Extracted text
-│   │                       └── logs/              # Action/event/vote logs
+│   │   ├── country:us/state:xx/
+│   │   │   └── sessions/
+│   │   │       └── {session_id}/
+│   │   │           ├── bills/
+│   │   │           │   └── {bill_id}/
+│   │   │           │       ├── metadata.json      # Bill data + _processing timestamps
+│   │   │           │       ├── files/             # Extracted text & documents
+│   │   │           │       │   ├── *.pdf          # Original PDFs
+│   │   │           │       │   ├── *.xml          # Original XMLs
+│   │   │           │       │   └── *_extracted.txt # Extracted text
+│   │   │           │       └── logs/              # Action/event/vote logs
+│   │   │           └── events/                    # Committee hearings
+│   │   │               └── {timestamp}_hearing.json
+│   │   └── orphaned_placeholders_tracking.json  # Data quality monitoring
 │   ├── data_not_processed/          # Extraction/formatting errors
-│   │   └── text_extraction_errors/  # Text extraction failures
-│   │       ├── download_failures/   # Failed downloads
-│   │       ├── parsing_errors/      # Failed text parsing
-│   │       └── missing_files/       # Missing source files
-│   └── event_archive/               # Archived event data
+│   │   ├── text_extraction_errors/  # Text extraction failures
+│   │   │   ├── download_failures/   # Failed downloads
+│   │   │   ├── parsing_errors/      # Failed text parsing
+│   │   │   └── missing_files/       # Missing source files
+│   │   └── missing_session/         # Bills without session info
+│   ├── event_archive/               # Archived event data
+│   └── latest_timestamp_seen.txt    # Last processed timestamp
 ├── bill_session_mapping/            # Bill-to-session mappings
+│   └── {state}.json
 ├── sessions/                        # Session metadata
+│   └── {state}.json
 ├── Pipfile, Pipfile.lock
 └── README.md
 ```
@@ -118,8 +160,31 @@ Formatted metadata is saved to `data_output/data_processed/`, organized by sessi
 
 Each bill directory contains:
 
-- `metadata.json` – structured information about the bill
+- `metadata.json` – structured information about the bill **with `_processing` timestamps**
 - `logs/` – action, event, and vote logs
+- `files/` – original documents and extracted text
+
+**Example `metadata.json` structure:**
+
+```json
+{
+  "identifier": "HB 1234",
+  "title": "Example Bill",
+  "_processing": {
+    "logs_latest_update": "2025-01-15T14:30:00Z",
+    "text_extraction_latest_update": "2025-01-16T08:00:00Z"
+  },
+  "actions": [
+    {
+      "description": "Introduced in House",
+      "date": "2025-01-01",
+      "_processing": {
+        "log_file_created": "2025-01-01T12:00:00Z"
+      }
+    }
+  ]
+}
+```
 
 ### Text Extraction Output (`files/`)
 
@@ -138,29 +203,33 @@ Failed items are logged separately:
 - `text_extraction_errors/download_failures/` – Documents that couldn't be downloaded
 - `text_extraction_errors/parsing_errors/` – Documents that couldn't be parsed
 - `text_extraction_errors/missing_files/` – Bills missing source files
+- `missing_session/` – Bills without session information
 
-Example directory structure:
+### Data Quality Monitoring (`orphaned_placeholders_tracking.json`)
 
+The pipeline automatically tracks **orphaned bills** - bills that have vote events or hearings but no actual bill data. Check this file periodically to identify data quality issues:
+
+```json
+{
+  "HB999": {
+    "first_seen": "2025-01-21T12:00:00Z",
+    "last_seen": "2025-01-23T14:30:00Z",
+    "occurrence_count": 3,
+    "session": "103",
+    "vote_count": 2,
+    "event_count": 0,
+    "path": "country:us/state:il/sessions/103/bills/HB999"
+  }
+}
 ```
-data_output/
-├── data_processed/
-│   └── country:us/state:tx/sessions/89/bills/HB1001/
-│       ├── metadata.json
-│       ├── files/
-│       │   ├── HB1001_Current_Version.pdf
-│       │   ├── HB1001_Current_Version_extracted.txt
-│       │   ├── HA1001_Amendment_HA1001.pdf
-│       │   └── HA1001_Amendment_HA1001_extracted.txt
-│       └── logs/
-│           ├── actions_log.json
-│           └── votes_log.json
-└── data_not_processed/
-    └── text_extraction_errors/
-        ├── download_failures/
-        │   └── bill_HB1010_20250114_123456.json
-        └── parsing_errors/
-            └── bill_SB0123_20250114_123457.json
-```
+
+**What to look for:**
+
+- Bills with high `occurrence_count` (3+) are **chronic orphans** - likely data quality issues
+- Check for typos in bill identifiers or scraper configuration
+- Orphans automatically resolve when the bill data arrives! 🎉
+
+📖 See [orphan tracking documentation](https://github.com/windy-civi/opencivicdata-blockchain-transformer/blob/main/docs/orphan_tracking.md) for more details.
 
 ---
 
@@ -173,15 +242,18 @@ Each run includes detailed logs to track progress and capture failures:
 - Logs are saved per bill under `logs/`
 - Processing summary shows total bills, events, and votes processed
 - Session mapping tracks bill-to-session relationships
+- **Orphan tracking** shows new, existing, and resolved orphans
 
 ### Text Extraction Logs
 
 - Download attempts with success/failure status
 - Extraction method used (XML, HTML, PDF)
 - Error details saved to `text_extraction_errors/`
+- **Auto-save commits** every 30 minutes prevent data loss
 - Summary reports include:
   - Total documents processed
   - Successful extractions by type
+  - Skipped (already extracted) documents
   - Failed downloads/extractions with reasons
 
 Pipelines are fault-tolerant — if a bill fails, the workflow continues for all others.
@@ -206,7 +278,7 @@ The text extraction workflow supports:
 
 ## 🔧 Workflow Configuration Options
 
-### Scrape & Format Action Inputs
+### Scrape Action Inputs
 
 ```yaml
 uses: windy-civi/opencivicdata-blockchain-transformer/actions/scrape@main
@@ -214,7 +286,15 @@ with:
   state: il # State abbreviation (required)
   github-token: ${{ secrets.GITHUB_TOKEN }}
   use-scrape-cache: "false" # Skip scraping, use cached data
-  force-update: "false" # Force push even if conflicts
+```
+
+### Format Action Inputs
+
+```yaml
+uses: windy-civi/opencivicdata-blockchain-transformer/actions/format@main
+with:
+  state: il # State abbreviation (required)
+  github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ### Text Extraction Action Inputs
@@ -224,7 +304,6 @@ uses: windy-civi/opencivicdata-blockchain-transformer/actions/extract@main
 with:
   state: il # State abbreviation (required)
   github-token: ${{ secrets.GITHUB_TOKEN }}
-  force-update: "false" # Force push even if conflicts
 ```
 
 ---
@@ -267,12 +346,12 @@ git add data_output bill_session_mapping sessions
 Once enabled, workflows run automatically:
 
 - **Scrape & Format**: 1am UTC daily
-- **Text Extraction**: 2am UTC daily
+- **Text Extraction**: 3am UTC daily (runs independently)
 
 ### Manual Trigger
 
 1. Go to **Actions** tab in GitHub
-2. Select the workflow (Scrape or Extract)
+2. Select the workflow (Scrape & Format or Extract Text)
 3. Click **Run workflow**
 4. Choose the branch and click **Run**
 
@@ -292,10 +371,12 @@ pipenv run python scrape_and_format/main.py \
   --openstates-data-folder /path/to/scraped/data \
   --git-repo-folder /path/to/output
 
-# Run text extraction
+# Run text extraction (with incremental flag)
 pipenv run python text_extraction/main.py \
   --state il \
-  --git-repo-folder /path/to/output
+  --data-folder /path/to/output/data_output/data_processed \
+  --output-folder /path/to/output \
+  --incremental
 ```
 
 ---
@@ -319,6 +400,13 @@ See the [known_problems/](https://github.com/windy-civi/opencivicdata-blockchain
 - Green checkmark = success
 - Red X = failure (click for logs)
 
+### Check Data Quality
+
+1. Review `orphaned_placeholders_tracking.json` for data issues
+2. Look for chronic orphans (occurrence_count >= 3)
+3. Check `data_not_processed/` for formatting/extraction errors
+4. Monitor auto-save commits during text extraction runs
+
 ### Common Issues
 
 **Scraping fails**:
@@ -327,16 +415,23 @@ See the [known_problems/](https://github.com/windy-civi/opencivicdata-blockchain
 - Verify state abbreviation matches OpenStates format
 - Check for new legislative sessions not yet configured
 
-**Text extraction fails**:
+**Text extraction fails or times out**:
 
 - Check `data_not_processed/text_extraction_errors/` for details
+- Look for auto-save commits (pipeline saves progress every 30 minutes)
+- Re-run the workflow - it will resume from where it left off (incremental)
 - Review error logs for specific bills
-- Verify URLs are accessible
+
+**Orphaned bills appear**:
+
+- Check `orphaned_placeholders_tracking.json` for details
+- Verify bill identifiers match between scraper and vote/event data
+- Bills may auto-resolve on next scrape if it's a timing issue
 
 **Push conflicts**:
 
-- Enable `force-update: 'true'` in workflow (use carefully)
-- Or manually resolve conflicts and re-run
+- The pipeline auto-handles conflicts with `git pull --rebase`
+- If manual resolution needed, check logs for specific conflicts
 
 ---
 
@@ -353,12 +448,22 @@ For discussions, join our community on Slack or GitHub Discussions.
 ## 🎯 Next Steps After Setup
 
 1. ✅ Verify both workflows are enabled
-2. ✅ Test with manual trigger first
+2. ✅ Test with manual trigger first (start with Scrape & Format)
 3. ✅ Check output in `data_output/data_processed/`
-4. ✅ Review any errors in `data_not_processed/`
-5. ✅ Enable scheduled runs once testing is successful
-6. ✅ Monitor first few automated runs for issues
+4. ✅ Review `orphaned_placeholders_tracking.json` for data quality
+5. ✅ Check any errors in `data_not_processed/`
+6. ✅ Test text extraction workflow independently
+7. ✅ Enable scheduled runs once testing is successful
+8. ✅ Monitor first few automated runs for issues
 
 ---
 
-**Part of the [Windy Civi](https://windycivi.com) ecosystem — building a transparent, verifiable civic data archive for all 50 states, with full bill text extraction.**
+## 📚 Additional Documentation
+
+- **[Incremental Processing Guide](https://github.com/windy-civi/opencivicdata-blockchain-transformer/blob/main/docs/incremental_processing/)** - How incremental updates work
+- **[Orphan Tracking Guide](https://github.com/windy-civi/opencivicdata-blockchain-transformer/blob/main/docs/orphan_tracking.md)** - Understanding data quality monitoring
+- **[Main Repository README](https://github.com/windy-civi/opencivicdata-blockchain-transformer)** - Full technical documentation
+
+---
+
+**Part of the [Windy Civi](https://windycivi.com) ecosystem — building a transparent, verifiable civic data archive for all 50 states.**
