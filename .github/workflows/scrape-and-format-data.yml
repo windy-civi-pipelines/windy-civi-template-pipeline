@@ -59,7 +59,7 @@ jobs:
           name: ${{ needs.scrape.outputs.scrape-artifact-name }}
 
       - name: Run formatter action
-        uses: windy-civi/toolkit/actions/scrape@refactor/v2-data-structure
+        uses: windy-civi/toolkit/actions/format@refactor/v2-data-structure
         with:
           state: ${{ env.STATE_CODE }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
